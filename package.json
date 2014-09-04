@@ -15,7 +15,7 @@
   "dependencies": {
     "body-parser": "^1.7.0",
     "coffee-script": "^1.8.0",
-    "promise": "^0.5.10",
+    "promise": "^5.0.0",
     "then-redis": "^0.3.12",
     "uuid": "^1.4.1"
   },
