@@ -1,4 +1,4 @@
-promise = require 'node-promise'
+promise = require 'promise'
 models = require '../feeds/models'
 db = require '../feeds/db'
 

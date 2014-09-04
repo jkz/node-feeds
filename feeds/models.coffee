@@ -1,5 +1,6 @@
 events    = require 'events'
 uuid      = require 'uuid'
+promise   = require 'promise'
 db        = require './db'
 instances = require './instances'
 
@@ -15,6 +16,7 @@ class Feed extends events.EventEmitter
     @limit   = options.limit ? 20
     @timeout = options.timeout ? null
 
+  validate: identity
   serialize: identity
   deserialize: identity
 
@@ -35,11 +37,16 @@ class Feed extends events.EventEmitter
 
     key = @entryKey(id)
 
-    db.multi()
-    db.zadd @key, timestamp, id
-    db.set key, @serialize(entry)
-    db.expire key, timeout if timeout
-    db.exec()
+    promise
+      .resolve entry
+      .then @validate
+      .then @serialize
+      .then (serialized) ->
+        db.multi()
+        db.zadd @key, timestamp, id
+        db.set key, serialized
+        db.expire key, timeout if timeout
+        db.exec()
       .then =>
         @emit 'entry', {id, entry}
         {id, entry}
@@ -102,6 +109,10 @@ class Feed extends events.EventEmitter
     options
 
 class JSONFeed extends Feed
+  # TODO maybe we don't want to serialize twice per entry :-)
+  validate: (entry) ->
+    @serialize(entry)
+    entry
   serialize: JSON.stringify
   deserialize: JSON.parse
 
