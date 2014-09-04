@@ -1,0 +1,21 @@
+{
+  "name": "feeds",
+  "version": "0.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha -w --compilers coffee:coffee-script/register test/*.spec.coffee"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^1.7.0",
+    "chai": "^1.9.1",
+    "chai-as-promised": "^4.1.1",
+    "coffee-script": "^1.8.0",
+    "mocha": "^1.21.4",
+    "node-promise": "^0.5.10",
+    "then-redis": "^0.3.12",
+    "uuid": "^1.4.1"
+  }
+}
