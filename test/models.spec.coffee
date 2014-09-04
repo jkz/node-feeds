@@ -1,7 +1,6 @@
-promise = require 'promise'
-models = require '../feeds/models'
-db = require '../feeds/db'
-
+promise  = require 'promise'
+models   = require '../feeds/models'
+db       = require '../feeds/db'
 {expect} = require './chai'
 
 describe 'models', ->
@@ -10,7 +9,7 @@ describe 'models', ->
 
     populate = (done) ->
       feed = new models.Feed 'key'
-      entry = (id) -> 'entry:' + id
+      entry = (id) -> 'entry/' + id
       ids = ['a', 'b', 'c', 'd', 'e']
       entries = (entry(id) for id in ids)
       promise
@@ -25,8 +24,11 @@ describe 'models', ->
             db.del keys... if keys.length
           .then ->
             done()
-
-      feed = null
+          .catch done
+        feed = null
+      else
+        feed = null
+        done()
 
 
     describe '.constructor()', ->
@@ -36,7 +38,7 @@ describe 'models', ->
       after clear
 
       it 'should have a key', ->
-        expect(feed.key).to.equal('feeds:key')
+        expect(feed.key).to.equal('feeds/key')
 
     describe '.add()', ->
 
@@ -57,25 +59,33 @@ describe 'models', ->
 
       it 'should add to index', ->
         entry = id = 'index'
-        timestamp = 1
-        feed.add entry, {id, timestamp}
+        timestamp = 100
 
-        result = db.zscore(feed.key, id).then(parseInt)
+        result = feed
+          .add entry, {id, timestamp}
+          .then ->
+            db.zscore(feed.key, id)
+          .then parseInt
+
         expect(result).to.become(timestamp)
 
       it 'should add as key', ->
         entry = id = 'key'
-        feed.add entry, {id}
 
-        result = db.get feed.entryKey(id)
+        result = feed
+          .add entry, {id}
+          .then ->
+            db.get feed.entryKey(id)
+
         expect(result).to.become(entry)
 
       it 'should expire keys', ->
         entry = id = 'ttl'
         timeout = 100
-        feed.add entry, {id, timeout}
-
-        result = db.ttl feed.entryKey(id)
+        result = feed
+          .add entry, {id, timeout}
+          .then ->
+            db.ttl feed.entryKey(id)
         expect(result).to.eventually.be.above(0)
 
       it 'should emit entries', (done) ->

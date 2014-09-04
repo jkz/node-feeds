@@ -8,7 +8,7 @@ identity = (x) -> x
 
 class Feed extends events.EventEmitter
   constructor: (@name, options={}) ->
-    @key     = "feeds:#{@name}"
+    @key     = "feeds/#{@name}"
 
     @db      = options.db ? db
 
@@ -21,7 +21,7 @@ class Feed extends events.EventEmitter
   deserialize: identity
 
   entryKey: (id) =>
-    "#{@key}:#{id}"
+    "#{@key}/#{id}"
 
   generateId: (entry) =>
     uuid.v4()
@@ -41,12 +41,14 @@ class Feed extends events.EventEmitter
       .resolve entry
       .then @validate
       .then @serialize
-      .then (serialized) ->
+      .then (serialized) =>
         db.multi()
         db.zadd @key, timestamp, id
         db.set key, serialized
         db.expire key, timeout if timeout
         db.exec()
+      .then =>
+        db.zscore @key, id
       .then =>
         @emit 'entry', {id, entry}
         {id, entry}
