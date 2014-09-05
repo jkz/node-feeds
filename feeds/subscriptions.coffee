@@ -33,7 +33,7 @@ class Subscription
     @on args...
 
   socket: (event, socket) =>
-    socket = io.client socket unless socket.emit
+    socket = io.client socket unless socket?.emit?
     @on event, (data) ->
       socket.emit event, data
 

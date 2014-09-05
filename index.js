@@ -1,2 +1,2 @@
 require('coffee-script/register');
-require('./feeds');
+module.exports = require('./feeds');

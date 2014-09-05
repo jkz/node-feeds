@@ -3,6 +3,7 @@ uuid      = require 'uuid'
 promise   = require 'promise'
 db        = require './db'
 instances = require './instances'
+subs      = require './subscriptions'
 
 identity = (x) -> x
 
@@ -15,6 +16,8 @@ class Feed extends events.EventEmitter
     # TODO fetch config from db
     @limit   = options.limit ? 20
     @timeout = options.timeout ? null
+
+    @sub     = new subs.Subscription(this)
 
   validate: identity
   serialize: identity
@@ -37,9 +40,13 @@ class Feed extends events.EventEmitter
 
     key = @entryKey(id)
 
+    validate = (entry) =>
+      @validate entry
+      entry
+
     promise
       .resolve entry
-      .then @validate
+      .then validate
       .then @serialize
       .then (serialized) =>
         db.multi()
@@ -69,6 +76,8 @@ class Feed extends events.EventEmitter
 
     min = '(' + min if newer and min isnt '-inf'
     max = '(' + max if older and max isnt '+inf'
+
+    console.log {offset, count, min, max, older, newer}
 
     db.zrangebyscore @key, min, max, 'LIMIT', offset, count
 
