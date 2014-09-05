@@ -29,6 +29,9 @@ class Feed extends events.EventEmitter
   generateId: (entry) =>
     uuid.v4()
 
+  generateTimestamp: (entry) =>
+    new Date().getTime()
+
   find: (id) =>
     db.get @entryKey(id)
       .then @deserialize
@@ -36,7 +39,7 @@ class Feed extends events.EventEmitter
   add: (entry, {id, timeout, timestamp}={}) =>
     id        ?= @generateId entry
     timeout   ?= @timeout
-    timestamp ?= new Date().getTime()
+    timestamp ?= @generateTimestamp entry
 
     key = @entryKey(id)
 
@@ -54,9 +57,8 @@ class Feed extends events.EventEmitter
         db.set key, serialized
         db.expire key, timeout if timeout
         db.exec()
-      .then =>
-        db.zscore @key, id
-      .then =>
+      .then ([isNew]) =>
+        throw "Not new" unless parseInt(isNew)
         @emit 'entry', {id, entry}
         {id, entry}
 
@@ -76,8 +78,6 @@ class Feed extends events.EventEmitter
 
     min = '(' + min if newer and min isnt '-inf'
     max = '(' + max if older and max isnt '+inf'
-
-    console.log {offset, count, min, max, older, newer}
 
     db.zrangebyscore @key, min, max, 'LIMIT', offset, count
 
