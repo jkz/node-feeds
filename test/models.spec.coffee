@@ -239,7 +239,7 @@ describe 'models', ->
               expect(entry).to.be.ok
               expect(actual).to.deep.equal
                 id: '/feeds/feed1/' + entry.id
-                entry: null
+                entry: entry.entry
                 timestamp: entry.timestamp
               null
             .then ->
@@ -251,6 +251,8 @@ describe 'models', ->
           .add 'first'
           .then (_entry) ->
             entry = _entry
+          .catch (err) ->
+            done err
 
 
       it 'should combine multiple feeds', (done) ->

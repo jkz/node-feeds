@@ -60,32 +60,35 @@ class Feed extends events.EventEmitter
         entry
       .then @deserialize
 
-  persist: ({key, id, entry, timestamp}, {timeout}={}) =>
+  persist: ({key, id, data, timestamp}, {timeout, noStore}={}) =>
     @db.multi()
     @db.zadd @key, timestamp, id
-    @db.set key, entry if key and entry
+    @db.set key, data unless noStore
     @db.expire key, timeout if key and timeout
     @db.exec()
       .then ([isNew]) ->
         throw "Not new" unless parseInt(isNew)
 
-  add: (entry, {id, timeout, timestamp}={}) =>
+  add: (entry, {id, timeout, timestamp, noStore}={}) =>
     id        ?= @generateId entry
     timestamp ?= @generateTimestamp entry
     timeout   ?= @timeout
 
     key = @dataKey(id)
 
-    validate = (entry) =>
-      @validate entry
-      entry
-
-    promise
-      .resolve entry
-      .then validate
-      .then @serialize
-      .then (entry) =>
-        @persist {key, id, entry, timestamp}, {timeout}
+    chain =
+      if noStore
+        promise.resolve null
+      else
+        promise
+          .resolve()
+          .then =>
+            @validate entry
+          .then =>
+            @serialize entry
+    chain
+      .then (data) =>
+        @persist {key, id, data, timestamp}, {timeout, noStore}
       .then =>
         @emit 'entry', {id, entry, timestamp}
         {id, entry, timestamp}
@@ -167,8 +170,9 @@ class ComboFeed extends Feed
 
   # Add another feed. Use the data key for id.
   combine: (other) =>
-    other.on 'entry', ({id, timestamp}) =>
+    other.on 'entry', ({id, entry, timestamp}) =>
       id = other.dataKey(id)
-      @add null, {id, timestamp}
+      noStore = true
+      @add entry, {id, timestamp, noStore}
 
 module.exports = {Feed, JSONFeed, ComboFeed}
