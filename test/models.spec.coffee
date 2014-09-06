@@ -18,17 +18,11 @@ describe 'models', ->
           done()
 
     clear = (done) ->
-      if feed.key
-        db.keys feed.key + '*'
-          .then (keys) ->
-            db.del keys... if keys.length
-          .then ->
-            done()
-          .catch done
-        feed = null
-      else
-        feed = null
-        done()
+      feed.clear()
+        .then ->
+          feed = null
+          done()
+        .catch done
 
 
     describe '.constructor()', ->
@@ -38,7 +32,7 @@ describe 'models', ->
       after clear
 
       it 'should have a key', ->
-        expect(feed.key).to.equal('feeds/key')
+        expect(feed.key).to.equal("#{feed.constructor.prefix}/key")
 
     describe '.add()', ->
 
@@ -49,8 +43,9 @@ describe 'models', ->
 
       it 'should use id', ->
         entry = id = 'id'
-        result = feed.add(entry, {id})
-        expect(result).to.become({id, entry})
+        timestamp = 1
+        result = feed.add(entry, {id, timestamp})
+        expect(result).to.become({id, entry, timestamp})
 
       it 'should provide default id', (done) ->
         entry = 'id'
@@ -75,7 +70,7 @@ describe 'models', ->
         result = feed
           .add entry, {id}
           .then ->
-            db.get feed.entryKey(id)
+            db.get feed.dataKey(id)
 
         expect(result).to.become(entry)
 
@@ -85,7 +80,7 @@ describe 'models', ->
         result = feed
           .add entry, {id, timeout}
           .then ->
-            db.ttl feed.entryKey(id)
+            db.ttl feed.dataKey(id)
         expect(result).to.eventually.be.above(0)
 
       it 'should emit entries', (done) ->
@@ -149,6 +144,26 @@ describe 'models', ->
         result = feed.entries(ids)
         expect(result).to.become(entries)
 
+    describe '.clear()', ->
+      before populate
+      after clear
+
+      it 'should delete all associated keys', ->
+        feed
+          .index()
+          .then (ids) ->
+            feed
+              .clear()
+              .then ->
+                feed.entries(ids)
+          .then (entries) ->
+            for entry in entries when entry
+              return throw new Error "Entries remaining"
+          .then ->
+            feed.index()
+          .then (ids) ->
+            throw new Error "Ids remaining" if ids.length
+
     describe '.range()', ->
       before populate
       after clear
@@ -198,3 +213,39 @@ describe 'models', ->
     describe '.page()', ->
     describe '.newer()', ->
     describe '.older()', ->
+
+  describe 'ComboFeed', ->
+    describe '.combine()', ->
+      feed1 = feed2 = combo = null
+
+      beforeEach ->
+        feed1 = new models.Feed 'feed1'
+        feed2 = new models.Feed 'feed2'
+        combo = new models.ComboFeed 'combo'
+        combo.combine feed1
+        combo.combine feed2
+
+      afterEach ->
+        promise.all [
+          feed1.clear()
+          feed2.clear()
+          combo.clear()
+        ]
+
+      it 'should propagate entry events', (done) ->
+        result = promise
+          .all([
+            feed1.add 'first'
+            feed2.add 'second'
+          ])
+          .then =>
+            setTimeout ->
+              combo
+                .range()
+                .then (entries) ->
+                  expect(entries).to.deep.equal(['first', 'second'])
+                  done()
+                .catch done
+            , 0
+
+

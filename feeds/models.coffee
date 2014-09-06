@@ -8,8 +8,15 @@ subs      = require './subscriptions'
 identity = (x) -> x
 
 class Feed extends events.EventEmitter
+  @prefix: '/feeds'
+
+  @create: (name, options={}) ->
+    throw "No name!" unless name
+    # TODO store in db
+    instances[name] = new this(name, options)
+
   constructor: (@name, options={}) ->
-    @key     = "feeds/#{@name}"
+    @key     = "#{@constructor.prefix}/#{@name}"
 
     @db      = options.db ? db
 
@@ -17,13 +24,24 @@ class Feed extends events.EventEmitter
     @limit   = options.limit ? 20
     @timeout = options.timeout ? null
 
-    @sub     = new subs.Subscription(this)
+    @serialize = options.serialize if options.serialize
+    @deserialize = options.deserialize if options.deserialize
+
+    @sub = new subs.Subscription(this)
+
+  # Remove all associated keys
+  clear: =>
+    return promise.reject "Won't wipe empty key!" unless @key
+
+    db.keys @key + '*'
+      .then (keys) =>
+        db.del keys... if keys.length
 
   validate: identity
   serialize: identity
   deserialize: identity
 
-  entryKey: (id) =>
+  dataKey: (id) =>
     "#{@key}/#{id}"
 
   generateId: (entry) =>
@@ -33,15 +51,25 @@ class Feed extends events.EventEmitter
     new Date().getTime()
 
   find: (id) =>
-    db.get @entryKey(id)
+    @db
+      .get @dataKey(id)
       .then @deserialize
+
+  persist: ({key, id, entry, timestamp}, {timeout}={}) =>
+    @db.multi()
+    @db.zadd @key, timestamp, id
+    @db.set key, entry if key and entry
+    @db.expire key, timeout if key and timeout
+    @db.exec()
+      .then ([isNew]) ->
+        throw "Not new" unless parseInt(isNew)
 
   add: (entry, {id, timeout, timestamp}={}) =>
     id        ?= @generateId entry
-    timeout   ?= @timeout
     timestamp ?= @generateTimestamp entry
+    timeout   ?= @timeout
 
-    key = @entryKey(id)
+    key = @dataKey(id)
 
     validate = (entry) =>
       @validate entry
@@ -51,19 +79,15 @@ class Feed extends events.EventEmitter
       .resolve entry
       .then validate
       .then @serialize
-      .then (serialized) =>
-        db.multi()
-        db.zadd @key, timestamp, id
-        db.set key, serialized
-        db.expire key, timeout if timeout
-        db.exec()
-      .then ([isNew]) =>
-        throw "Not new" unless parseInt(isNew)
-        @emit 'entry', {id, entry}
-        {id, entry}
+      .then (entry) =>
+        @persist {key, id, entry, timestamp}, {timeout}
+      .then =>
+        @emit 'entry', {id, entry, timestamp}
+        {id, entry, timestamp}
 
   entries: (ids) =>
-    db.mget (@entryKey(id) for id in ids)...
+    @db
+      .mget (@dataKey(id) for id in ids)...
       .then (entries) =>
         @deserialize(entry) for entry in entries
       .catch (err) ->
@@ -79,7 +103,7 @@ class Feed extends events.EventEmitter
     min = '(' + min if newer and min isnt '-inf'
     max = '(' + max if older and max isnt '+inf'
 
-    db.zrangebyscore @key, min, max, 'LIMIT', offset, count
+    db.zrevrangebyscore @key, max, min, 'LIMIT', offset, count
 
   range: (options) =>
     @index(options).then(@entries)
@@ -127,15 +151,19 @@ class JSONFeed extends Feed
   serialize: JSON.stringify
   deserialize: JSON.parse
 
-create = ({type, name, options}={}) ->
-  throw "No name!" unless name
+# Combine multiple feeds in to a single one
+class ComboFeed extends Feed
+  # No need for entry key as it is already stored by another feed
+  dataKey: identity
 
-  Class = switch type
-    when 'json' then JSONFeed
-    else Feed
+  # TODO We might want to validate somewhere else
+  validate: ->
+    true
 
-  # TODO store in db
+  # Add another feed. Use the data key for id.
+  combine: (other) =>
+    other.on 'entry', ({id, timestamp}) =>
+      id = other.dataKey(id)
+      @add null, {id, timestamp}
 
-  instances[name] = new Class(name, options)
-
-module.exports = {Feed, JSONFeed, create}
+module.exports = {Feed, JSONFeed, ComboFeed}
