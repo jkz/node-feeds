@@ -7,22 +7,18 @@ describe 'models', ->
   describe 'Feed', ->
     feed = ids = entries = null
 
-    populate = (done) ->
+    populate = ->
       feed = new models.Feed 'key'
       entry = (id) -> 'entry/' + id
       ids = ['a', 'b', 'c', 'd', 'e']
       entries = (entry(id) for id in ids)
-      promise
-        .all (feed.add entry(id), {id} for id in ids)
-        .then ->
-          done()
+      promise.all (feed.add entry(id), {id} for id in ids)
 
-    clear = (done) ->
-      feed.clear()
+    clear = ->
+      feed
+        .clear()
         .then ->
-          feed = null
-          done()
-        .catch done
+            feed = null
 
 
     describe '.constructor()', ->
@@ -233,19 +229,57 @@ describe 'models', ->
         ]
 
       it 'should propagate entry events', (done) ->
-        result = promise
-          .all([
-            feed1.add 'first'
-            feed2.add 'second'
-          ])
-          .then =>
-            setTimeout ->
+        expected = 'entry'
+        entry = null
+
+        combo.on 'entry', (actual) ->
+          promise
+            .resolve()
+            .then ->
+              expect(entry).to.be.ok
+              expect(actual).to.deep.equal
+                id: '/feeds/feed1/' + entry.id
+                entry: null
+                timestamp: entry.timestamp
+              null
+            .then ->
+              done()
+            .catch (err) ->
+              done err
+
+        feed1
+          .add 'first'
+          .then (_entry) ->
+            entry = _entry
+
+
+      it 'should combine multiple feeds', (done) ->
+        entries = ['first', 'second']
+        results = []
+
+        combo.on 'entry', ({id}) ->
+          combo
+            .find(id)
+            .then (data) ->
+              entry = entries.shift()
+              expect(data).to.equal(entry)
+              results.unshift entry
+              entries.length
+            .then (length) ->
+              return if length
               combo
                 .range()
                 .then (entries) ->
-                  expect(entries).to.deep.equal(['first', 'second'])
+                  expect(entries).to.deep.equal(results)
+                .then ->
                   done()
-                .catch done
-            , 0
+                .catch (err) ->
+                  done err
+            .catch (err) ->
+              done err
+          .catch done
 
-
+        promise.all [
+          feed1.add 'first'
+          feed2.add 'second'
+        ]

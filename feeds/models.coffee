@@ -1,6 +1,7 @@
 events    = require 'events'
 uuid      = require 'uuid'
 promise   = require 'promise'
+
 db        = require './db'
 instances = require './instances'
 subs      = require './subscriptions'
@@ -24,6 +25,7 @@ class Feed extends events.EventEmitter
     @limit   = options.limit ? 20
     @timeout = options.timeout ? null
 
+    @validate = options.validate if options.validate
     @serialize = options.serialize if options.serialize
     @deserialize = options.deserialize if options.deserialize
 
@@ -53,6 +55,9 @@ class Feed extends events.EventEmitter
   find: (id) =>
     @db
       .get @dataKey(id)
+      .then (entry) ->
+        throw "No entry!" unless entry
+        entry
       .then @deserialize
 
   persist: ({key, id, entry, timestamp}, {timeout}={}) =>
