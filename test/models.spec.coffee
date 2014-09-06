@@ -9,7 +9,7 @@ describe 'models', ->
 
     populate = ->
       feed = new models.Feed 'key'
-      entry = (id) -> 'entry/' + id
+      entry = (id) -> 'data/' + id
       ids = ['a', 'b', 'c', 'd', 'e']
       entries = (entry(id) for id in ids)
       promise.all (feed.add entry(id), {id} for id in ids)
@@ -38,22 +38,22 @@ describe 'models', ->
       afterEach clear
 
       it 'should use id', ->
-        entry = id = 'id'
+        data = id = 'id'
         timestamp = 1
-        result = feed.add(entry, {id, timestamp})
-        expect(result).to.become({id, entry, timestamp})
+        result = feed.add(data, {id, timestamp})
+        expect(result).to.become({id, data, timestamp})
 
       it 'should provide default id', (done) ->
-        entry = 'id'
-        result = feed.add(entry).then ({id}) ->
+        data = 'id'
+        result = feed.add(data).then (id) ->
           done if id then null else "id is not defined"
 
       it 'should add to index', ->
-        entry = id = 'index'
+        data = id = 'index'
         timestamp = 100
 
         result = feed
-          .add entry, {id, timestamp}
+          .add data, {id, timestamp}
           .then ->
             db.zscore(feed.key, id)
           .then parseInt
@@ -61,26 +61,26 @@ describe 'models', ->
         expect(result).to.become(timestamp)
 
       it 'should add as key', ->
-        entry = id = 'key'
+        data = id = 'key'
 
         result = feed
-          .add entry, {id}
+          .add data, {id}
           .then ->
             db.get feed.dataKey(id)
 
-        expect(result).to.become(entry)
+        expect(result).to.become(data)
 
       it 'should expire keys', ->
-        entry = id = 'ttl'
+        data = id = 'ttl'
         timeout = 100
         result = feed
-          .add entry, {id, timeout}
+          .add data, {id, timeout}
           .then ->
             db.ttl feed.dataKey(id)
         expect(result).to.eventually.be.above(0)
 
       it 'should emit entries', (done) ->
-        feed.on 'entry', ->
+        feed.on 'data', ->
           done()
 
         feed.add 'emit'
@@ -153,7 +153,7 @@ describe 'models', ->
               .then ->
                 feed.entries(ids)
           .then (entries) ->
-            for entry in entries when entry
+            for data in entries when data
               return throw new Error "Entries remaining"
           .then ->
             feed.index()
@@ -217,7 +217,7 @@ describe 'models', ->
       beforeEach ->
         feed1 = new models.Feed 'feed1'
         feed2 = new models.Feed 'feed2'
-        combo = new models.ComboFeed 'combo'
+        combo = new models.ComboFeed 'combo', render: ({data}) -> data
         combo.combine feed1
         combo.combine feed2
 
@@ -228,29 +228,23 @@ describe 'models', ->
           combo.clear()
         ]
 
-      it 'should propagate entry events', (done) ->
-        expected = 'entry'
-        entry = null
+      it 'should propagate data events', (done) ->
+        id = timestamp = 1
+        data = 'data'
 
-        combo.on 'entry', (actual) ->
-          promise
-            .resolve()
-            .then ->
-              expect(entry).to.be.ok
-              expect(actual).to.deep.equal
-                id: '/feeds/feed1/' + entry.id
-                entry: entry.entry
-                timestamp: entry.timestamp
-              null
-            .then ->
-              done()
-            .catch (err) ->
-              done err
+        combo.on 'data', (actual) ->
+          done try
+            expect(actual).to.deep.equal
+              id: '/feeds/feed1/' + id
+              data: data
+              timestamp: timestamp
+              render: data
+            null
+          catch e
+            e
 
         feed1
-          .add 'first'
-          .then (_entry) ->
-            entry = _entry
+          .add data, {id, timestamp}
           .catch (err) ->
             done err
 
@@ -259,29 +253,20 @@ describe 'models', ->
         entries = ['first', 'second']
         results = []
 
-        combo.on 'entry', ({id}) ->
+        combo.on 'data', ({id}) ->
+          results.unshift entries.shift()
+          return if entries.length
+
           combo
-            .find(id)
-            .then (data) ->
-              entry = entries.shift()
-              expect(data).to.equal(entry)
-              results.unshift entry
-              entries.length
-            .then (length) ->
-              return if length
-              combo
-                .range()
-                .then (entries) ->
-                  expect(entries).to.deep.equal(results)
-                .then ->
-                  done()
-                .catch (err) ->
-                  done err
+            .range()
+            .then (entries) ->
+              expect(entries).to.deep.equal(results)
+            .then ->
+              done()
             .catch (err) ->
               done err
-          .catch done
 
         promise.all [
-          feed1.add 'first'
-          feed2.add 'second'
+          feed1.add entries[0]
+          feed2.add entries[1]
         ]

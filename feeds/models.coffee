@@ -12,7 +12,7 @@ class Feed extends events.EventEmitter
   @prefix: '/feeds'
 
   @create: (name, options={}) ->
-    throw "No name!" unless name
+    throw new Error "No name!" unless name
     # TODO store in db
     instances[name] = new this(name, options)
 
@@ -28,6 +28,7 @@ class Feed extends events.EventEmitter
     @validate = options.validate if options.validate
     @serialize = options.serialize if options.serialize
     @deserialize = options.deserialize if options.deserialize
+    @render = options.render if options.render
 
     @sub = new subs.Subscription(this)
 
@@ -39,68 +40,97 @@ class Feed extends events.EventEmitter
       .then (keys) =>
         db.del keys... if keys.length
 
+  # Throw an error when not valid
   validate: identity
+  # From internal to disk
   serialize: identity
+  # From disk to internal
   deserialize: identity
+  # From internal to external
+  render: ({id, data, timestamp}) -> data
+  # From external to internal
+  parse: (blob) -> blob
+
 
   dataKey: (id) =>
     "#{@key}/#{id}"
 
-  generateId: (entry) =>
+  generateId: (data) =>
     uuid.v4()
 
-  generateTimestamp: (entry) =>
+  generateTimestamp: (data) =>
     new Date().getTime()
 
-  find: (id) =>
-    @db
-      .get @dataKey(id)
-      .then (entry) ->
-        throw "No entry!" unless entry
-        entry
-      .then @deserialize
-
-  persist: ({key, id, data, timestamp}, {timeout, noStore}={}) =>
+  store: ({id, data, timestamp, timeout}) =>
     @db.multi()
     @db.zadd @key, timestamp, id
-    @db.set key, data unless noStore
-    @db.expire key, timeout if key and timeout
+    @db.set key, data if data
+    @db.expire key, timeout if timeout
     @db.exec()
-      .then ([isNew]) ->
-        throw "Not new" unless parseInt(isNew)
+      .then ([isNew]) =>
+        throw new Error "Not new" unless parseInt(isNew)
 
-  add: (entry, {id, timeout, timestamp, noStore}={}) =>
-    id        ?= @generateId entry
-    timestamp ?= @generateTimestamp entry
-    timeout   ?= @timeout
+  save: ({id, data, timestamp, timeout, key}) =>
+    key     ?= @dataKey id
+    timeout ?= @timeout
 
-    key = @dataKey(id)
+    @db.multi()
+    @db.zadd @key, timestamp, id
+    @db.set key, data if data
+    @db.expire key, timeout if timeout
+    @db.exec()
+      .then ([isNew]) =>
+        throw new Error "Not new" unless parseInt(isNew)
+
+  send: ({id, data, timestamp}) =>
+    render = @render {id, data, timestamp}
+    @emit 'data', {id, data, timestamp, render}
+
+  add: (raw, {id, timeout, timestamp, key}={}) =>
+    data      = raw and @parse raw
+    id        ?= @generateId data
+    timestamp ?= @generateTimestamp data
 
     chain =
-      if noStore
+      if not data
         promise.resolve null
       else
         promise
           .resolve()
           .then =>
-            @validate entry
+            @validate data
           .then =>
-            @serialize entry
+            @serialize data
     chain
       .then (data) =>
-        @persist {key, id, data, timestamp}, {timeout, noStore}
+        @save {id, data, timestamp, timeout}
       .then =>
-        @emit 'entry', {id, entry, timestamp}
-        {id, entry, timestamp}
+        @send {id, data, timestamp}
+      .then =>
+        {id, data, timestamp}
+
+  find: (id) =>
+    @db.multi()
+    @db.get @dataKey(id)
+    @db.zscore @key, id
+    @db.exec()
+      .then ([serialized, timestamp]) =>
+        throw new Error "Not found!" unless serialized and timestamp
+        data = @deserialize(serialized)
+        @render {id, data, timestamp}
 
   entries: (ids) =>
-    @db
-      .mget (@dataKey(id) for id in ids)...
-      .then (entries) =>
-        @deserialize(entry) for entry in entries
-      .catch (err) ->
-        return [] if "#{err}" == "Error: ERR wrong number of arguments for 'mget' command"
-        throw err
+    return promise.reject new Error "No ids" unless ids.length
+
+    @db.multi()
+    @db.mget (@dataKey(id) for id in ids)...
+    @db.zscore @key, id for id in ids
+    @db.exec()
+      .then ([datas, timestamps...]) =>
+        for id, i in ids
+          data = @deserialize(datas[i])
+          timestamp = timestamps[i]
+          @render {id, data, timestamp}
 
   index: ({offset, count, min, max, older, newer}={}) =>
     offset ?= 0
@@ -111,10 +141,23 @@ class Feed extends events.EventEmitter
     min = '(' + min if newer and min isnt '-inf'
     max = '(' + max if older and max isnt '+inf'
 
-    db.zrevrangebyscore @key, max, min, 'LIMIT', offset, count
+    chain = db
+      .zrevrangebyscore @key, max, min, 'WITHSCORES', 'LIMIT', offset, count
+      .then (entries) =>
+        id: id, timestamp: entries[i + 1] for id, i in entries by 2
 
-  range: (options) =>
-    @index(options).then(@entries)
+  range: (options={}) =>
+    {timestamps} = options
+
+    @index(options)
+      .then (refs) =>
+        @db.mget (@dataKey(ref.id) for ref in refs)...
+          .then (datas) =>
+            for ref, i in refs
+              @render
+                id: ref.id
+                data: @deserialize(datas[i])
+                timestamp: ref.timestamp
 
   slice: (offset=0, end) =>
     end ?= offset + @limit
@@ -153,9 +196,9 @@ class Feed extends events.EventEmitter
 
 class JSONFeed extends Feed
   # TODO maybe we don't want to serialize twice per entry :-)
-  validate: (entry) ->
-    @serialize(entry)
-    entry
+  validate: (data) ->
+    @serialize(data)
+    data
   serialize: JSON.stringify
   deserialize: JSON.parse
 
@@ -164,15 +207,20 @@ class ComboFeed extends Feed
   # No need for entry key as it is already stored by another feed
   dataKey: identity
 
+  render: ({id, data, timestamp}) ->
+    {id, data, timestamp}
+
   # TODO We might want to validate somewhere else
   validate: ->
     true
 
-  # Add another feed. Use the data key for id.
+  # Whenever an entry is added to the other feed, create a reference to it
+  # with the data key and timestamp. Then reemit the data.
   combine: (other) =>
-    other.on 'entry', ({id, entry, timestamp}) =>
+    other.on 'data', ({id, data, timestamp}) =>
       id = other.dataKey(id)
-      noStore = true
-      @add entry, {id, timestamp, noStore}
+      @save {id, timestamp}
+        .then =>
+          @send {id, data, timestamp}
 
 module.exports = {Feed, JSONFeed, ComboFeed}
