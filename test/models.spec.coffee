@@ -210,14 +210,14 @@ describe 'models', ->
     describe '.newer()', ->
     describe '.older()', ->
 
-  describe 'ComboFeed', ->
+  describe 'Aggregator', ->
     describe '.combine()', ->
       feed1 = feed2 = combo = null
 
       beforeEach ->
         feed1 = new models.Feed 'feed1'
         feed2 = new models.Feed 'feed2'
-        combo = new models.ComboFeed 'combo', render: ({data}) -> data
+        combo = new models.Aggregator 'combo', render: ({data}) -> data
         combo.combine feed1
         combo.combine feed2
 

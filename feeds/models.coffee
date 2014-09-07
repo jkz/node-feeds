@@ -9,28 +9,21 @@ subs      = require './subscriptions'
 identity = (x) -> x
 
 class Feed extends events.EventEmitter
-  @prefix: '/feeds'
-
   @create: (name, options={}) ->
     throw new Error "No name!" unless name
     # TODO store in db
     instances[name] = new this(name, options)
 
   constructor: (@name, options={}) ->
-    @key     = "#{@constructor.prefix}/#{@name}"
+    this[key] = val for key, val of options
 
-    @db      = options.db ? db
+    @db      ?= db
 
     # TODO fetch config from db
-    @limit   = options.limit ? 20
-    @timeout = options.timeout ? null
-
-    @validate = options.validate if options.validate
-    @serialize = options.serialize if options.serialize
-    @deserialize = options.deserialize if options.deserialize
-    @render = options.render if options.render
-
-    @sub = new subs.Subscription(this)
+    @key     = "#{@prefix ? ''}/#{@name}"
+    @limit   ?= 20
+    @timeout ?= null
+    @sub     ?= new subs.Subscription(this)
 
   # Remove all associated keys
   clear: =>
@@ -50,7 +43,6 @@ class Feed extends events.EventEmitter
   render: ({id, data, timestamp}) -> data
   # From external to internal
   parse: (blob) -> blob
-
 
   dataKey: (id) =>
     "#{@key}/#{id}"
@@ -203,7 +195,7 @@ class JSONFeed extends Feed
   deserialize: JSON.parse
 
 # Combine multiple feeds in to a single one
-class ComboFeed extends Feed
+class Aggregator extends Feed
   # No need for entry key as it is already stored by another feed
   dataKey: identity
 
@@ -223,4 +215,4 @@ class ComboFeed extends Feed
         .then =>
           @send {id, data, timestamp}
 
-module.exports = {Feed, JSONFeed, ComboFeed}
+module.exports = {Feed, JSONFeed, Aggregator}
