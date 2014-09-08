@@ -5,6 +5,7 @@ Expose paginated feeds of anything as websocket, webhook or event emitter.
 ## Roadmap
 
 * Atom support
+* RSS support
 
 ## LICENSE
 

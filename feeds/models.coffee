@@ -12,7 +12,8 @@ class Feed extends events.EventEmitter
   @create: (name, options={}) ->
     throw new Error "No name!" unless name
     # TODO store in db
-    instances[name] = new this(name, options)
+    feed = new this(name, options)
+    instances[feed.key] ?= feed
 
   constructor: (@name, options={}) ->
     this[key] = val for key, val of options
@@ -20,16 +21,23 @@ class Feed extends events.EventEmitter
     @db      ?= db
 
     # TODO fetch config from db
-    @key     = "#{@prefix ? ''}/#{@name}"
     @limit   ?= 20
     @timeout ?= null
     @sub     ?= new subs.Subscription(this)
 
+    @key = @indexKey()
+
+  # Persist feed configuration in db
+  save: =>
+    null
+
   # Remove all associated keys
   clear: =>
-    return promise.reject "Won't wipe empty key!" unless @key
+    key = @key
 
-    db.keys @key + '*'
+    return promise.reject "Won't wipe empty key!" unless key
+
+    db.keys key + '*'
       .then (keys) =>
         db.del keys... if keys.length
 
@@ -43,6 +51,9 @@ class Feed extends events.EventEmitter
   render: ({id, data, timestamp}) -> data
   # From external to internal
   parse: (blob) -> blob
+
+  indexKey: =>
+    "#{@prefix}/#{@name}"
 
   dataKey: (id) =>
     "#{@key}/#{id}"
