@@ -53,7 +53,7 @@ class Feed extends events.EventEmitter
   parse: (blob) -> blob
 
   indexKey: =>
-    "#{@prefix}/#{@name}"
+    "#{@prefix ? ''}/#{@name}"
 
   dataKey: (id) =>
     "#{@key}/#{id}"
@@ -207,6 +207,10 @@ class JSONFeed extends Feed
 
 # Combine multiple feeds in to a single one
 class Aggregator extends Feed
+  constructor: ->
+    super
+    @others ?= {}
+
   # No need for entry key as it is already stored by another feed
   dataKey: identity
 
@@ -220,6 +224,10 @@ class Aggregator extends Feed
   # Whenever an entry is added to the other feed, create a reference to it
   # with the data key and timestamp. Then reemit the data.
   combine: (other) =>
+    return if @others[other.key]
+
+    @others[other.key] = other
+
     other.on 'data', ({id, data, timestamp}) =>
       id = other.dataKey(id)
       @save {id, timestamp}
