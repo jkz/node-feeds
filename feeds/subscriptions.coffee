@@ -1,8 +1,8 @@
 events = require 'events'
 http   = require 'http'
 url    = require 'url'
-io =
-  client: require 'socket.io-client'
+# io =
+#   client: require 'socket.io-client'
 
 # The subscribers return unsubscribe functions
 class Subscription
@@ -32,10 +32,10 @@ class Subscription
   callback: (args...) =>
     @on args...
 
-  socket: (event, socket) =>
-    socket = io.client socket unless socket?.emit?
-    @on event, (data) ->
-      socket.emit event, data
+  # socket: (event, socket) =>
+  #   socket = io.client socket unless socket?.emit?
+  #   @on event, (data) ->
+  #     socket.emit event, data
 
   endpoint: (event, endpoint, options={}) =>
     {host, path, port} = url.parse endpoint
