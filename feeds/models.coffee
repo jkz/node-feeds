@@ -24,6 +24,7 @@ class Feed extends events.EventEmitter
     @limit   ?= 20
     @timeout ?= null
     @sub     ?= new subs.Subscription(this)
+    @noStore ?= false
 
     @key = @indexKey()
 
@@ -64,6 +65,7 @@ class Feed extends events.EventEmitter
   generateTimestamp: (data) =>
     new Date().getTime()
 
+  # XXX Not used currently
   store: ({id, data, timestamp, timeout}) =>
     @db.multi()
     @db.zadd @key, timestamp, id
@@ -79,8 +81,9 @@ class Feed extends events.EventEmitter
 
     @db.multi()
     @db.zadd @key, timestamp, id
-    @db.set key, data if data
-    @db.expire key, timeout if timeout
+    if data and not @noStore
+      @db.set key, data
+      @db.expire key, timeout
     @db.exec()
       .then ([isNew]) =>
         throw new Error "Not new" unless parseInt(isNew)
