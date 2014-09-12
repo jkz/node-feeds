@@ -28,7 +28,7 @@ describe 'models', ->
       after clear
 
       it 'should have a key', ->
-        expect(feed.key).to.equal("#{feed.constructor.prefix}/key")
+        expect(feed.key).to.equal("/key")
 
     describe '.add()', ->
 
@@ -235,7 +235,7 @@ describe 'models', ->
         combo.on 'data', (actual) ->
           done try
             expect(actual).to.deep.equal
-              id: '/feeds/feed1/' + id
+              id: '/feed1/' + id
               data: data
               timestamp: timestamp
               render: data
